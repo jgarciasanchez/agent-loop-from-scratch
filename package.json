@@ -1,0 +1,18 @@
+{
+  "name": "agent-loop-from-scratch",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "loop": "tsx 01-minimal-loop/index.ts",
+    "check": "tsc"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}

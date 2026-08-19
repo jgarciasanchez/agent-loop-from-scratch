@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+*.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / os
+.vscode/
+.DS_Store
+
+# agent experiment scratch
+transcripts/
+*.local.*
