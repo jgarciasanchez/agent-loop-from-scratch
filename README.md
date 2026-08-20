@@ -28,3 +28,12 @@ TypeScript, Node.js, ESM, Anthropic SDK
 - **`02-eval-harness`** — Build an eval harness with a fixed set of tasks and
   expected outcomes, so changes to tool descriptions, context, or agent behavior
   can be measured instead of judged by intuition.
+
+  ## Running it
+
+Requires an Anthropic API key in `ANTHROPIC_API_KEY`.
+
+```bash
+npm install
+npm run loop   # runs 01-minimal-loop
+```
