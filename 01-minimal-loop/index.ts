@@ -6,14 +6,20 @@ import type {
   MessageParam,
 } from "@anthropic-ai/sdk/resources";
 import readline from "node:readline/promises";
+import fs from "node:fs/promises";
 import { exit, stdin as input, stdout } from "node:process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const sandboxPath = path.join(__dirname, "sandbox");
 const client = new Anthropic();
 
 const tools: Anthropic.Tool[] = [
   {
     name: "read_file",
-    description: "Reads the content of a file",
+    description:
+      "Reads the content of a file. Paths are resolved relative to a sandboxed directory; absolute paths and paths that escape it (e.g. via '..') are rejected.",
     input_schema: {
       type: "object",
       properties: {
@@ -23,31 +29,38 @@ const tools: Anthropic.Tool[] = [
     },
   },
   {
-    name: "check_file",
-    description: "Check for the existence of a file",
+    name: "list_dir",
+    description:
+      "Return the list of files in a specified path. Paths are resolved relative to a sandboxed directory; absolute paths and paths that escape it (e.g. via '..') are rejected.",
     input_schema: {
       type: "object",
       properties: {
-        path: { type: "string", description: "Path file" },
+        path: { type: "string", description: "Path" },
       },
       required: ["path"],
     },
   },
 ];
 
+const getResolvedPath = (inputPath: string) => {
+  const resolvedPath = path.resolve(sandboxPath, inputPath);
+  const relPath = path.relative(sandboxPath, resolvedPath);
+
+  if (relPath.startsWith("..") || path.isAbsolute(relPath))
+    throw new Error(
+      `Error, Access is restricted just to one directory, and the user is trying to reach a file or folder outside this directory`,
+    );
+
+  return resolvedPath;
+};
+
 const toolImpls = {
-  read_file: async (path: string): Promise<string> => {
-    if (path === "index.ts") {
-      return "lorem ipsum";
-    }
-    return "error";
+  read_file: async (inputPath: string): Promise<string> => {
+    return fs.readFile(getResolvedPath(inputPath), "utf8");
   },
 
-  check_file: async (path: string): Promise<string> => {
-    if (path === "index.ts") {
-      return "true";
-    }
-    return "false";
+  list_dir: async (inputPath: string): Promise<string> => {
+    return (await fs.readdir(getResolvedPath(inputPath))).join("\n");
   },
 };
 
@@ -75,7 +88,7 @@ const agentTurn = async (messages: MessageParam[]) => {
   while (true) {
     const response: Message = await client.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 1024,
+      max_tokens: 100,
       tools,
       messages: messages,
     });
@@ -87,6 +100,10 @@ const agentTurn = async (messages: MessageParam[]) => {
         )
         .map((x) => x.text)
         .join("\n"),
+    );
+
+    console.log(
+      `[tokens] input=${response.usage.input_tokens} output=${response.usage.output_tokens} cache_read=${response.usage.cache_read_input_tokens ?? 0} cache_creation=${response.usage.cache_creation_input_tokens ?? 0}`,
     );
 
     messages.push({ role: "assistant", content: response.content });
@@ -106,8 +123,13 @@ const agentTurn = async (messages: MessageParam[]) => {
         }
 
         const name = tool.name as keyof typeof toolImpls;
-        const { path } = tool.input as { path: string };
-        const output = await toolImpls[name](path);
+        const { path: toolPath } = tool.input as { path: string };
+
+        console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
+        const output = await toolImpls[name](toolPath);
+        console.log(
+          `← ${output.length} chars: ${output.slice(0, 80).replace(/\n/g, "\\n")}${output.length > 80 ? "…" : ""}`,
+        );
 
         toolResponses.push({
           type: "tool_result",
@@ -116,6 +138,7 @@ const agentTurn = async (messages: MessageParam[]) => {
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        console.log(`← ERROR: ${errorMsg}`);
         toolResponses.push({
           type: "tool_result",
           tool_use_id: tool.id,
