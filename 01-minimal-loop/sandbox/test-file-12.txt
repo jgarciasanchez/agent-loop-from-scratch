@@ -1,0 +1,2 @@
+Archivo de prueba número 12.
+Contenido de ejemplo para test-file-12.txt

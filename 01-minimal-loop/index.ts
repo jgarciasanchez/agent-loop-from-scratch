@@ -6,65 +6,34 @@ import type {
   MessageParam,
 } from "@anthropic-ai/sdk/resources";
 import readline from "node:readline/promises";
-import fs from "node:fs/promises";
 import { exit, stdin as input, stdout } from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { toolSchemas, toolsByName } from "./tools/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sandboxPath = path.join(__dirname, "sandbox");
 const client = new Anthropic();
 
-const tools: Anthropic.Tool[] = [
-  {
-    name: "read_file",
-    description:
-      "Reads the content of a file. Paths are resolved relative to a sandboxed directory; absolute paths and paths that escape it (e.g. via '..') are rejected.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Path file" },
-      },
-      required: ["path"],
-    },
-  },
-  {
-    name: "list_dir",
-    description:
-      "Return the list of files in a specified path. Paths are resolved relative to a sandboxed directory; absolute paths and paths that escape it (e.g. via '..') are rejected.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Path" },
-      },
-      required: ["path"],
-    },
-  },
-];
-
-const getResolvedPath = (inputPath: string) => {
-  const resolvedPath = path.resolve(sandboxPath, inputPath);
-  const relPath = path.relative(sandboxPath, resolvedPath);
-
-  if (relPath.startsWith("..") || path.isAbsolute(relPath))
-    throw new Error(
-      `Error, Access is restricted just to one directory, and the user is trying to reach a file or folder outside this directory`,
-    );
-
-  return resolvedPath;
+type AgentConfig = {
+  toolIterationLimit?: number;
+  toolWarnAtIteration?: { at: number } | false;
+  cycleIterationLimit?: number;
+  cycleWarnAtIteration?: { at: number } | false; 
+  maxTokens?: number;
+  model?: Anthropic.Model;
 };
 
-const toolImpls = {
-  read_file: async (inputPath: string): Promise<string> => {
-    return fs.readFile(getResolvedPath(inputPath), "utf8");
-  },
+const DEFAULT_CONFIG = {
+  toolIterationLimit: 15,
+  toolWarnAtIteration: false,
+  cycleIterationLimit: 15,
+  cycleWarnAtIteration: false,
+  maxTokens: 1800,
+  model: "claude-haiku-4-5",
+} satisfies Required<AgentConfig>;
 
-  list_dir: async (inputPath: string): Promise<string> => {
-    return (await fs.readdir(getResolvedPath(inputPath))).join("\n");
-  },
-};
-
-const runAgent = async () => {
+const runAgent = async (userConfig: AgentConfig) => {
   const rl = readline.createInterface({ input, output: stdout });
   const messages: MessageParam[] = [];
 
@@ -80,16 +49,28 @@ const runAgent = async () => {
       exit();
     }
     messages.push({ role: "user", content: newUserMsg });
-    await agentTurn(messages);
+    await agentTurn(messages, userConfig);
   }
 };
 
-const agentTurn = async (messages: MessageParam[]) => {
+const agentTurn = async (messages: MessageParam[], userConfig: AgentConfig) => {
+  const cfg = { ...DEFAULT_CONFIG, userConfig };
+  let iterationCount = 0;
+
   while (true) {
+    if (iterationCount === cfg.toolIterationLimit) {
+      console.log("Max number of iterations reached!!");
+      return;
+    } else if ( cfg.cycleWarnAtIteration && iterationCount >= cfg.cycleWarnAtIteration) {
+      console.warn(
+        `About to reach max amount of iteration: ${cfg.toolIterationLimit - cfg.cycleWarnAtIteration}%`,
+      );
+    }
+
     const response: Message = await client.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 100,
-      tools,
+      max_tokens: 2000,
+      tools: toolSchemas,
       messages: messages,
     });
 
@@ -118,15 +99,15 @@ const agentTurn = async (messages: MessageParam[]) => {
 
     for (const tool of toolUses) {
       try {
-        if (!(tool.name in toolImpls)) {
+        const toolDef = toolsByName.get(tool.name);
+        if (!toolDef) {
           throw new Error(`Unknown tool: ${tool.name}`);
         }
 
-        const name = tool.name as keyof typeof toolImpls;
-        const { path: toolPath } = tool.input as { path: string };
+        const parsedInput = toolDef.parse(tool.input);
 
         console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
-        const output = await toolImpls[name](toolPath);
+        const output = await toolDef.run(parsedInput, sandboxPath);
         console.log(
           `← ${output.length} chars: ${output.slice(0, 80).replace(/\n/g, "\\n")}${output.length > 80 ? "…" : ""}`,
         );
@@ -138,7 +119,7 @@ const agentTurn = async (messages: MessageParam[]) => {
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        console.log(`← ERROR: ${errorMsg}`);
+        console.error(`← ERROR: ${errorMsg}`);
         toolResponses.push({
           type: "tool_result",
           tool_use_id: tool.id,
@@ -152,6 +133,7 @@ const agentTurn = async (messages: MessageParam[]) => {
       role: "user",
       content: toolResponses,
     });
+    iterationCount++;
     // console.log(messages);
   }
 };
@@ -178,4 +160,8 @@ const responseCheck = (res: Message) => {
   }
 };
 
-await runAgent();
+const getPercentage = (current: number, max: number): number => {
+  return current / max;
+};
+
+await runAgent({});

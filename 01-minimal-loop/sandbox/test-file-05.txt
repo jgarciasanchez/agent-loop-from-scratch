@@ -1,0 +1,2 @@
+Archivo de prueba número 5.
+Contenido de ejemplo para test-file-05.txt
