@@ -9,29 +9,13 @@ import readline from "node:readline/promises";
 import { exit, stdin as input, stdout } from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { toolSchemas, toolsByName } from "./tools/index.js";
+import { toolSchemas, toolsByName } from "./agentTools/index.js";
+import type { AgentConfig, TurnDecision, TurnResult } from "./lib/types.js";
+import { DEFAULT_CONFIG } from "./lib/configs.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const sandboxPath = path.join(__dirname, "sandbox");
 const client = new Anthropic();
-
-type AgentConfig = {
-  toolIterationLimit?: number;
-  toolWarnAtIteration?: { at: number } | false;
-  cycleIterationLimit?: number;
-  cycleWarnAtIteration?: { at: number } | false; 
-  maxTokens?: number;
-  model?: Anthropic.Model;
-};
-
-const DEFAULT_CONFIG = {
-  toolIterationLimit: 15,
-  toolWarnAtIteration: false,
-  cycleIterationLimit: 15,
-  cycleWarnAtIteration: false,
-  maxTokens: 1800,
-  model: "claude-haiku-4-5",
-} satisfies Required<AgentConfig>;
 
 const runAgent = async (userConfig: AgentConfig) => {
   const rl = readline.createInterface({ input, output: stdout });
@@ -49,21 +33,34 @@ const runAgent = async (userConfig: AgentConfig) => {
       exit();
     }
     messages.push({ role: "user", content: newUserMsg });
-    await agentTurn(messages, userConfig);
+    const agentResponse = await agentTurn(messages, userConfig);
+    if (agentResponse.kind !== "done") {
+      //logic for how im going to handle different cases
+    }
   }
 };
 
-const agentTurn = async (messages: MessageParam[], userConfig: AgentConfig) => {
-  const cfg = { ...DEFAULT_CONFIG, userConfig };
+const agentTurn = async (
+  messages: MessageParam[],
+  userConfig: AgentConfig,
+): Promise<TurnResult> => {
+  const cfg = { ...DEFAULT_CONFIG, ...userConfig };
   let iterationCount = 0;
 
   while (true) {
     if (iterationCount === cfg.toolIterationLimit) {
       console.log("Max number of iterations reached!!");
-      return;
-    } else if ( cfg.cycleWarnAtIteration && iterationCount >= cfg.cycleWarnAtIteration) {
+      return {
+        kind: "limit",
+        which: "tool_iterations",
+        at: iterationCount,
+      };
+    } else if (
+      cfg.cycleWarnAtIteration &&
+      iterationCount >= cfg.cycleWarnAtIteration.at
+    ) {
       console.warn(
-        `About to reach max amount of iteration: ${cfg.toolIterationLimit - cfg.cycleWarnAtIteration}%`,
+        `About to reach max amount of iteration: ${cfg.cycleIterationLimit - cfg.cycleWarnAtIteration.at}%`,
       );
     }
 
@@ -89,7 +86,9 @@ const agentTurn = async (messages: MessageParam[], userConfig: AgentConfig) => {
 
     messages.push({ role: "assistant", content: response.content });
 
-    if (responseCheck(response) !== "continue") return response;
+    const responseCheck: TurnDecision = AgentResponseCheck(response);
+
+    if (responseCheck.kind !== "continue") return responseCheck;
 
     const toolUses = response.content.filter(
       (x: ContentBlock): x is Anthropic.ToolUseBlock => x.type === "tool_use",
@@ -134,34 +133,48 @@ const agentTurn = async (messages: MessageParam[], userConfig: AgentConfig) => {
       content: toolResponses,
     });
     iterationCount++;
-    // console.log(messages);
   }
 };
 
-const responseCheck = (res: Message) => {
+const AgentResponseCheck = (res: Message): TurnDecision => {
   switch (res.stop_reason) {
     case "tool_use":
-      return "continue";
+      return { kind: "continue" };
     case "pause_turn":
-      return "continue";
+      return { kind: "continue" };
     case "end_turn":
     case "stop_sequence":
-      return "done";
+      return {
+        kind: "done",
+      };
     case "max_tokens":
+      return {
+        kind: "truncated",
+        content: res.content,
+      };
     case "refusal":
+      if (!res.stop_details) throw new Error("refusal without stop_details");
+      return {
+        kind: "refusal",
+        stopDetails: res.stop_details,
+      };
     case "model_context_window_exceeded":
-      return "error";
+      return {
+        kind: "error",
+        which: "model_context_window_exceeded",
+        content: res.content,
+      };
     case null:
-      return "error";
+      return {
+        kind: "error",
+        which: "null",
+        content: res.content,
+      };
     default: {
       const exhaustive: never = res.stop_reason;
       throw new Error(`Unhandled stop_reason: ${exhaustive}`);
     }
   }
-};
-
-const getPercentage = (current: number, max: number): number => {
-  return current / max;
 };
 
 await runAgent({});
