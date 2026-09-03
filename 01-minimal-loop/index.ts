@@ -46,23 +46,26 @@ const agentTurn = async (
 ): Promise<TurnResult> => {
   const cfg = { ...DEFAULT_CONFIG, ...userConfig };
   let iterationCount = 0;
+  let truncationCount = 0;
+  let cycleCount = 0;
 
   while (true) {
-    // if (iterationCount === cfg.toolIterationLimit) {
-    //   console.log("Max number of iterations reached!!");
-    //   return {
-    //     kind: "limit",
-    //     which: "tool_iterations",
-    //     at: iterationCount,
-    //   };
-    // } else if (
-    //   cfg.cycleWarnAtIteration &&
-    //   iterationCount >= cfg.cycleWarnAtIteration.at
-    // ) {
-    //   console.warn(
-    //     `About to reach max amount of iteration: ${cfg.cycleIterationLimit - cfg.cycleWarnAtIteration.at}%`,
-    //   );
-    // }
+    if (cycleCount === cfg.cycleIterationLimit) {
+      console.log("Max number of cycles reached!!");
+
+      return {
+        kind: "limit",
+        which: "cycles",
+        at: cycleCount,
+      };
+    } else if (
+      cfg.cycleWarnAtIteration &&
+      cycleCount >= cfg.cycleWarnAtIteration.at
+    ) {
+      console.warn(
+        `About to reach max amount of cycles: ${Math.round((cycleCount / cfg.cycleIterationLimit) * 100)}%`,
+      );
+    }
 
     const response: Message = await client.messages.create({
       model: cfg.model,
@@ -100,17 +103,64 @@ const agentTurn = async (
     const responseCheck: TurnDecision = AgentResponseCheck(response);
     const isTruncated = responseCheck.kind === "truncated";
 
-    if (responseCheck.kind !== "continue" && !isTruncated) return responseCheck;
-
     const toolUses = response.content.filter(
       (x: ContentBlock): x is Anthropic.ToolUseBlock => x.type === "tool_use",
     );
+
+    if (isTruncated) {
+      truncationCount++;
+      if (truncationCount >= cfg.maxTruncationRetries) {
+        if (toolUses.length !== 0) {
+          messages.push({
+            role: "user",
+            content: toolUses.map((tool) => ({
+              type: "tool_result",
+              tool_use_id: tool.id,
+              is_error: true,
+              content: "Aborted: max truncation retries reached.",
+            })),
+          });
+        }
+        return {
+          kind: "limit",
+          which: "max_tokens_retries",
+          at: truncationCount,
+        };
+      }
+    } else truncationCount = 0;
+
+    if (responseCheck.kind !== "continue" && !isTruncated) return responseCheck;
 
     const toolResponses: Array<ContentBlockParam> = [];
 
     // console.log("toolUses", toolUses);
 
-    for (const tool of toolUses) {
+    for (const [toolIndex, tool] of toolUses.entries()) {
+      if (iterationCount === cfg.toolIterationLimit) {
+        console.log("Max number of iterations reached!!");
+        for (const remaining of toolUses.slice(toolIndex)) {
+          toolResponses.push({
+            type: "tool_result",
+            tool_use_id: remaining.id,
+            is_error: true,
+            content: "Aborted: max tool iterations reached.",
+          });
+        }
+        messages.push({ role: "user", content: toolResponses });
+        return {
+          kind: "limit",
+          which: "tool_iterations",
+          at: iterationCount,
+        };
+      } else if (
+        cfg.toolWarnAtIteration &&
+        iterationCount >= cfg.toolWarnAtIteration.at
+      ) {
+        console.warn(
+          `About to reach max amount of iteration: ${Math.round((iterationCount / cfg.toolIterationLimit) * 100)}%`,
+        );
+      }
+
       try {
         const toolDef = toolsByName.get(tool.name);
         if (!toolDef) {
@@ -141,21 +191,18 @@ const agentTurn = async (
           content: `${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
         });
       }
+      iterationCount++;
     }
 
     // console.log("toolResponses", toolResponses);
 
-    // if (isTruncated && toolUses.length === 0 && messages.length >= 1) {
-    //   // let lastMessage: MessageParam = messages.pop();
-    //   // lastMessage?.content.at(-1);
-    // }
     if (toolResponses.length !== 0) {
       messages.push({
         role: "user",
         content: toolResponses,
       });
     }
-    iterationCount++;
+    cycleCount++;
   }
 };
 

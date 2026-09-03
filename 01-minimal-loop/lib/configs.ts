@@ -6,5 +6,6 @@ export const DEFAULT_CONFIG = {
   cycleIterationLimit: 15,
   cycleWarnAtIteration: false,
   maxTokens: 200,
+  maxTruncationRetries: 3,
   model: "claude-haiku-4-5",
 } satisfies Required<AgentConfig>;

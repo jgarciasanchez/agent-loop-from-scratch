@@ -6,7 +6,11 @@ import type {
 
 export type TurnResult =
   | { kind: "done" }
-  | { kind: "limit"; which: "tool_iterations" | "tool_calls"; at: number }
+  | {
+      kind: "limit";
+      which: "tool_iterations" | "tool_calls" | "max_tokens_retries" | "cycles";
+      at: number;
+    }
   | {
       kind: "truncated";
       content: ContentBlock[];
@@ -29,5 +33,6 @@ export type AgentConfig = {
   cycleIterationLimit?: number;
   cycleWarnAtIteration?: { at: number } | false;
   maxTokens?: number;
+  maxTruncationRetries?: number;
   model?: Anthropic.Model;
 };
