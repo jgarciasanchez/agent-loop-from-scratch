@@ -48,28 +48,31 @@ const agentTurn = async (
   let iterationCount = 0;
 
   while (true) {
-    if (iterationCount === cfg.toolIterationLimit) {
-      console.log("Max number of iterations reached!!");
-      return {
-        kind: "limit",
-        which: "tool_iterations",
-        at: iterationCount,
-      };
-    } else if (
-      cfg.cycleWarnAtIteration &&
-      iterationCount >= cfg.cycleWarnAtIteration.at
-    ) {
-      console.warn(
-        `About to reach max amount of iteration: ${cfg.cycleIterationLimit - cfg.cycleWarnAtIteration.at}%`,
-      );
-    }
+    // if (iterationCount === cfg.toolIterationLimit) {
+    //   console.log("Max number of iterations reached!!");
+    //   return {
+    //     kind: "limit",
+    //     which: "tool_iterations",
+    //     at: iterationCount,
+    //   };
+    // } else if (
+    //   cfg.cycleWarnAtIteration &&
+    //   iterationCount >= cfg.cycleWarnAtIteration.at
+    // ) {
+    //   console.warn(
+    //     `About to reach max amount of iteration: ${cfg.cycleIterationLimit - cfg.cycleWarnAtIteration.at}%`,
+    //   );
+    // }
 
     const response: Message = await client.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 2000,
+      model: cfg.model,
+      max_tokens: cfg.maxTokens,
       tools: toolSchemas,
       messages: messages,
     });
+
+    // console.log("messages", JSON.stringify(messages, null, 2));
+    // console.log("stringify", JSON.stringify(response, null, 2));
 
     console.log(
       response.content
@@ -84,17 +87,28 @@ const agentTurn = async (
       `[tokens] input=${response.usage.input_tokens} output=${response.usage.output_tokens} cache_read=${response.usage.cache_read_input_tokens ?? 0} cache_creation=${response.usage.cache_creation_input_tokens ?? 0}`,
     );
 
-    messages.push({ role: "assistant", content: response.content });
+    const lastMessage = messages.at(-1);
+
+    if (
+      lastMessage &&
+      lastMessage.role === "assistant" &&
+      Array.isArray(lastMessage.content)
+    ) {
+      lastMessage.content.push(...response.content);
+    } else messages.push({ role: "assistant", content: response.content });
 
     const responseCheck: TurnDecision = AgentResponseCheck(response);
+    const isTruncated = responseCheck.kind === "truncated";
 
-    if (responseCheck.kind !== "continue") return responseCheck;
+    if (responseCheck.kind !== "continue" && !isTruncated) return responseCheck;
 
     const toolUses = response.content.filter(
       (x: ContentBlock): x is Anthropic.ToolUseBlock => x.type === "tool_use",
     );
 
     const toolResponses: Array<ContentBlockParam> = [];
+
+    // console.log("toolUses", toolUses);
 
     for (const tool of toolUses) {
       try {
@@ -104,8 +118,7 @@ const agentTurn = async (
         }
 
         const parsedInput = toolDef.parse(tool.input);
-
-        console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
+        // console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
         const output = await toolDef.run(parsedInput, sandboxPath);
         console.log(
           `← ${output.length} chars: ${output.slice(0, 80).replace(/\n/g, "\\n")}${output.length > 80 ? "…" : ""}`,
@@ -118,20 +131,30 @@ const agentTurn = async (
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`← ERROR: ${errorMsg}`);
+        console.error(
+          `← ERROR: ${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
+        );
         toolResponses.push({
           type: "tool_result",
           tool_use_id: tool.id,
           is_error: true,
-          content: errorMsg,
+          content: `${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
         });
       }
     }
 
-    messages.push({
-      role: "user",
-      content: toolResponses,
-    });
+    // console.log("toolResponses", toolResponses);
+
+    // if (isTruncated && toolUses.length === 0 && messages.length >= 1) {
+    //   // let lastMessage: MessageParam = messages.pop();
+    //   // lastMessage?.content.at(-1);
+    // }
+    if (toolResponses.length !== 0) {
+      messages.push({
+        role: "user",
+        content: toolResponses,
+      });
+    }
     iterationCount++;
   }
 };

@@ -5,6 +5,6 @@ export const DEFAULT_CONFIG = {
   toolWarnAtIteration: false,
   cycleIterationLimit: 15,
   cycleWarnAtIteration: false,
-  maxTokens: 1800,
+  maxTokens: 200,
   model: "claude-haiku-4-5",
 } satisfies Required<AgentConfig>;
