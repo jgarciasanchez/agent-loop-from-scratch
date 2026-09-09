@@ -5,6 +5,8 @@
   "private": true,
   "scripts": {
     "loop": "tsx 01-minimal-loop/index.ts",
+    "server": "tsx 01-minimal-loop/server.ts",
+    "web": "npm --prefix web run dev",
     "check": "tsc"
   },
   "dependencies": {

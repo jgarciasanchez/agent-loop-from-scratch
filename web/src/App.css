@@ -1,0 +1,144 @@
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.chat-header {
+  padding: 1.25rem 1rem 0.75rem;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.chat-header h1 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.chat-header p {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.chat-empty {
+  color: #999;
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.chat-bubble {
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.9rem;
+  max-width: 80%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.chat-bubble.user {
+  align-self: flex-end;
+  background: #2563eb;
+  color: white;
+  border-bottom-right-radius: 0.2rem;
+}
+
+.chat-bubble.agent {
+  align-self: flex-start;
+  background: #f1f1f1;
+  color: #1a1a1a;
+  border-bottom-left-radius: 0.2rem;
+}
+
+.chat-bubble.pending {
+  opacity: 0.6;
+}
+
+.chat-bubble.tool {
+  align-self: flex-start;
+  background: #fff7e6;
+  color: #7a5200;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.chat-bubble.tool-result {
+  align-self: flex-start;
+  background: #eef7ee;
+  color: #2f5b2f;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.chat-bubble.tool-result.error {
+  background: #fdecea;
+  color: #8a2b22;
+}
+
+.chat-bubble.error {
+  align-self: center;
+  background: #fdecea;
+  color: #8a2b22;
+}
+
+.chat-input {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid #e5e5e5;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid #ccc;
+  font-size: 0.95rem;
+}
+
+.chat-input button {
+  padding: 0.6rem 1.1rem;
+  border-radius: 0.6rem;
+  border: none;
+  background: #2563eb;
+  color: white;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.chat-input button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chat-header {
+    border-color: #333;
+  }
+
+  .chat-input {
+    border-color: #333;
+  }
+
+  .chat-bubble.agent {
+    background: #2a2a2a;
+    color: #eee;
+  }
+
+  .chat-input input {
+    background: #1e1e1e;
+    color: #eee;
+    border-color: #444;
+  }
+}
