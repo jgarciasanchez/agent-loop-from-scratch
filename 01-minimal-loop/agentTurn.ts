@@ -22,6 +22,7 @@ export const agentTurn = async (
   let iterationCount = 0;
   let truncationCount = 0;
   let cycleCount = 0;
+  let disabledTools = false;
 
   while (true) {
     if (cycleCount === cfg.cycleIterationLimit) {
@@ -44,6 +45,7 @@ export const agentTurn = async (
     const response: Message = await client.messages.create({
       model: cfg.model,
       max_tokens: cfg.maxTokens,
+      tool_choice: disabledTools ? { type: "none" } : { type: "auto" },
       tools: toolSchemas,
       messages: messages,
     });
@@ -136,40 +138,39 @@ export const agentTurn = async (
         console.warn(
           `About to reach max amount of iteration: ${Math.round((iterationCount / cfg.toolIterationLimit) * 100)}%`,
         );
-      } else {
-        try {
-          const toolDef = toolsByName.get(tool.name);
-          if (!toolDef) {
-            throw new Error(`Unknown tool: ${tool.name}`);
-          }
-
-          const parsedInput = toolDef.parse(tool.input);
-          // console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
-          const output = await toolDef.run(parsedInput, sandboxPath);
-          logToFile(
-            `← ${output.length} chars: ${output.slice(0, 80).replace(/\n/g, "\\n")}${output.length > 80 ? "…" : ""}`,
-          );
-
-          toolResponses.push({
-            type: "tool_result",
-            tool_use_id: tool.id,
-            content: output,
-          });
-        } catch (error) {
-          const errorMsg =
-            error instanceof Error ? error.message : String(error);
-          console.error(
-            `← ERROR: ${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
-          );
-          toolResponses.push({
-            type: "tool_result",
-            tool_use_id: tool.id,
-            is_error: true,
-            content: `${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
-          });
-        }
-        iterationCount++;
       }
+      try {
+        const toolDef = toolsByName.get(tool.name);
+        if (!toolDef) {
+          throw new Error(`Unknown tool: ${tool.name}`);
+        }
+
+        const parsedInput = toolDef.parse(tool.input);
+        // console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
+        const output = await toolDef.run(parsedInput, sandboxPath);
+        logToFile(
+          `← ${output.length} chars: ${output.slice(0, 80).replace(/\n/g, "\\n")}${output.length > 80 ? "…" : ""}`,
+        );
+
+        toolResponses.push({
+          type: "tool_result",
+          tool_use_id: tool.id,
+          content: output,
+        });
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(
+          `← ERROR: ${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
+        );
+        toolResponses.push({
+          type: "tool_result",
+          tool_use_id: tool.id,
+          is_error: true,
+          content: `${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
+        });
+      }
+
+      iterationCount++;
     }
 
     // console.log("toolResponses", toolResponses);
