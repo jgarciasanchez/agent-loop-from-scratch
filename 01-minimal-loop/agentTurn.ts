@@ -40,7 +40,6 @@ export const agentTurn = async (
         `About to reach max amount of cycles: ${Math.round((cycleCount / cfg.cycleIterationLimit) * 100)}%`,
       );
     }
-    logToFile(JSON.stringify(messages));
 
     const response: Message = await client.messages.create({
       model: cfg.model,
@@ -74,6 +73,8 @@ export const agentTurn = async (
     ) {
       lastMessage.content.push(...response.content);
     } else messages.push({ role: "assistant", content: response.content });
+
+    logToFile(JSON.stringify(messages));
 
     const responseCheck = AgentResponseCheck(response);
     const isTruncated = responseCheck.kind === "truncated";
@@ -117,21 +118,17 @@ export const agentTurn = async (
 
       if (iterationCount === cfg.toolIterationLimit) {
         console.log("Max number of iterations reached!!");
-        
+
         for (const remaining of toolUses.slice(toolIndex)) {
           toolResponses.push({
             type: "tool_result",
             tool_use_id: remaining.id,
             is_error: true,
-            content: "Aborted: max tool iterations reached.",
+            content:
+              "Aborted: max tool iterations reached. Tools are going to be disabled",
           });
         }
-        messages.push({ role: "user", content: toolResponses });
-        return {
-          kind: "limit",
-          which: "tool_iterations",
-          at: iterationCount,
-        };
+        break;
       } else if (
         cfg.toolWarnAtIteration &&
         iterationCount >= cfg.toolWarnAtIteration.at
@@ -139,39 +136,40 @@ export const agentTurn = async (
         console.warn(
           `About to reach max amount of iteration: ${Math.round((iterationCount / cfg.toolIterationLimit) * 100)}%`,
         );
-      }
+      } else {
+        try {
+          const toolDef = toolsByName.get(tool.name);
+          if (!toolDef) {
+            throw new Error(`Unknown tool: ${tool.name}`);
+          }
 
-      try {
-        const toolDef = toolsByName.get(tool.name);
-        if (!toolDef) {
-          throw new Error(`Unknown tool: ${tool.name}`);
+          const parsedInput = toolDef.parse(tool.input);
+          // console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
+          const output = await toolDef.run(parsedInput, sandboxPath);
+          logToFile(
+            `← ${output.length} chars: ${output.slice(0, 80).replace(/\n/g, "\\n")}${output.length > 80 ? "…" : ""}`,
+          );
+
+          toolResponses.push({
+            type: "tool_result",
+            tool_use_id: tool.id,
+            content: output,
+          });
+        } catch (error) {
+          const errorMsg =
+            error instanceof Error ? error.message : String(error);
+          console.error(
+            `← ERROR: ${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
+          );
+          toolResponses.push({
+            type: "tool_result",
+            tool_use_id: tool.id,
+            is_error: true,
+            content: `${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
+          });
         }
-
-        const parsedInput = toolDef.parse(tool.input);
-        // console.log(`→ ${tool.name}(${JSON.stringify(tool.input)})`);
-        const output = await toolDef.run(parsedInput, sandboxPath);
-        logToFile(
-          `← ${output.length} chars: ${output.slice(0, 80).replace(/\n/g, "\\n")}${output.length > 80 ? "…" : ""}`,
-        );
-
-        toolResponses.push({
-          type: "tool_result",
-          tool_use_id: tool.id,
-          content: output,
-        });
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(
-          `← ERROR: ${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
-        );
-        toolResponses.push({
-          type: "tool_result",
-          tool_use_id: tool.id,
-          is_error: true,
-          content: `${errorMsg}. ${isTruncated ? "Input truncated reason: Max-tokens" : ""}`,
-        });
+        iterationCount++;
       }
-      iterationCount++;
     }
 
     // console.log("toolResponses", toolResponses);

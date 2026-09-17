@@ -13,6 +13,7 @@ dist/
 # logs
 *.log
 npm-debug.log*
+01-minimal-loop/logs/
 
 # editor / os
 .vscode/

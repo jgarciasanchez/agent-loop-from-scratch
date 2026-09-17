@@ -11,10 +11,11 @@ export const runAgent = async (
 ) => {
   const rl = readline.createInterface({ input, output: stdout });
   const messages: MessageParam[] = [];
+  logToFile("Session started", true);
 
   while (true) {
     const newUserMsg = await rl.question(
-      messages.length === 0 ? "En que te puedo ayudar?" : "-",
+      messages.length === 0 ? "En que te puedo ayudar?\n" : "-",
     );
     if (
       newUserMsg.toLowerCase() === "close" ||
@@ -26,6 +27,7 @@ export const runAgent = async (
     messages.push({ role: "user", content: newUserMsg });
     const agentResponse = await agentTurn(messages, userConfig, sandboxPath);
     logToFile(`agentResponse: ${JSON.stringify(agentResponse)}`);
+    
     if (agentResponse.kind !== "done") {
       //logic for how im going to handle different cases
     }

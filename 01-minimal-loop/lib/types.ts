@@ -12,10 +12,6 @@ export type TurnResult =
       at: number;
     }
   | {
-      kind: "truncated";
-      content: ContentBlock[];
-    }
-  | {
       kind: "refusal";
       stopDetails: RefusalStopDetails;
     }
@@ -25,7 +21,13 @@ export type TurnResult =
       content: ContentBlock[];
     };
 
-export type TurnDecision = { kind: "continue" } | TurnResult;
+export type TurnDecision =
+  | { kind: "continue" }
+  | {
+      kind: "truncated";
+      content: ContentBlock[];
+    }
+  | TurnResult;
 
 export type AgentConfig = {
   toolIterationLimit?: number;
